@@ -1,0 +1,54 @@
+name: 编译固件
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: checkout 项目代码
+      uses: actions/checkout@v4
+    
+    # 使用缓存加速工具链部署
+    - name: 缓存 ARM 工具链
+      id: cache-arm-toolchain
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/gcc-arm-none-eabi
+        key: ${{ runner.os }}-arm-toolchain
+
+    - name: ARM 工具链 (网络)
+      id: install-arm-toolchain
+      if: steps.cache-arm-toolchain.outputs.cache-hit != 'true'
+      continue-on-error: true  # 允许此步骤失败后继续
+      run: |
+          wget -O arm-gnu-toolchain.tar.bz2 \
+             "https://developer.arm.com/-/media/Files/downloads/gnu-rm/10.3-2021.10/gcc-arm-none-eabi-10.3-2021.10-x86_64-linux.tar.bz2"; 
+          mkdir -p ~/gcc-arm-none-eabi
+          tar xjf arm-gnu-toolchain.tar.bz2 -C ~/gcc-arm-none-eabi --strip-components 1
+
+    - name: 添加 ARM 工具链(网络)到 PATH
+      run: echo "$HOME/gcc-arm-none-eabi/bin" >> $GITHUB_PATH
+
+    - name: ARM 工具链(系统)
+      if: steps.cache-arm-toolchain.outputs.cache-hit != 'true' && steps.install-arm-toolchain.outcome == 'failure'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-arm-none-eabi
+
+    - name: 执行编译任务
+      run: make
+
+    - name: 上传固件
+      uses: actions/upload-artifact@v4
+      with:
+        name: build
+        path: |
+          build/*.hex
+          build/*.bin
+          build/*.elf
+          build/*.map
+        if-no-files-found: error
